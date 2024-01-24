@@ -7,9 +7,6 @@ This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute
 
 Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
 
-```{r}
-pl
-```
 
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
 
@@ -20,5 +17,133 @@ The preview shows you a rendered HTML copy of the contents of the editor. Conseq
 
 ```{r}
 install.packages("ppls_1.6-1.1.tar.gz", repos = NULL, type = "source")
+install.packages("splines2")
+install.packages("splines")
+install.packages("MASS")
 ```
+
+
+```{r}
+library(ppls)
+library(FactoMineR)
+library(glmnet)
+```
+
+
+```{r}
+cookies<- read.table("cookies.txt", sep = "\t")
+write.table(cookie, "cookies.txt", sep ="\t")
+
+cookies = data.frame(cookies[,702], cookies[, 1:700])
+names(cookies) = c("sucre", paste("X", 1:700 , sep= ""))
+boxplot(cookies[, -1])
+
+Y = cookies[,1]
+X = as.matrix(cookies[,-1])
+```
+
+
+```{r}
+acp = PCA(X)
+```
+
+
+$ \beta^{ridge}  $
+
+
+On considèrè le modèle suivant:
+
+$$ Y = X{\beta} + E \quad , \quad E = N(0, \sigma^2I)$$
+où $$Y = \begin{vmatrix} 
+& Y_1 \\
+& \dots \\
+& Y_n
+\end{vmatrix}$$
+
+```{r}
+library(Matrix)
+
+cookies.ridge = glmnet(X , Y, family = "gaussian", alpha = 0)
+cookies.ridge$beta
+plot(cookies.ridge, xvar = 'lambda')
+
+```
+
+```{r}
+cookies.ridge.cv = cv.glmnet(X,Y, nflods = 10, alpha = 0)
+plot(cookies.ridge.cv)
+```
+```{r}
+cookies.ridge.cv$lambda.min
+predict(cookies.ridge, newx= X[1:5,], s = cookies.ridge.cv$lambda.min)
+cookies.ridge = glmnet(X,Y, alpha = 0, lambda = cookies.ridge.cv$lambda.min)
+cookies.ridge$beta
+
+# Regression Lasso
+cookies.lasso = glmnet(X,Y, alpha = 1)
+plot(cookies.lasso, xvar= "lambda")
+
+```
+```{r}
+# cross validation
+cookies.lasso.cv = cv.glmnet(X,Y, nfolds = 10, alpha = 1 )
+
+res2 = glmnet(X,Y, alpha = 1, lambda = cookies.lasso.cv$lambda.min)
+which(res2$beta != 0)
+```
+
+```{r}
+#Stability selection
+
+#on prend le lambda de la validation croisée
+lambda_cv = cookies.lasso.cv$lambda.min
+n = nrow(X)
+stabsel.glmnet = function(i)
+{
+  #on tire au hasard partie entirerr de n/2 individus
+  b_sort = sort(sample(1:n, floor(n/2)))
+  #on estime beta sur cet echantillon avec lasso et lambda_cv
+  resultat_glmnet = glmnet(X[b_sort,],Y[b_sort], alpha = 1, lambda= lambda_cv)
+  #on stocke l'indice des coef non nuls
+  ind_glmnet = which(resultat_glmnet$beta!=0)
+  return(tabulate(ind_glmnet, ncol(X)))
+}
+
+#On lance la fonction pour B resampling
+nb_repli = 100
+res.cum= Reduce("+", lapply(1:nb_repli, stabsel.glmnet))
+seuil=0.9
+ind=which(res.cum/nb_repli>seuil)
+
+```
+
+
+```{r}
+cook.lm = lm(Y ~ X[,ind])
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
