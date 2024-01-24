@@ -118,6 +118,7 @@ ind=which(res.cum/nb_repli>seuil)
 ```
 
 
+
 ```{r}
 cook.lm = lm(Y ~ X[,ind])
 ```
@@ -125,7 +126,90 @@ cook.lm = lm(Y ~ X[,ind])
 
 
 
+### Copals Data ### 
 
+```{r}
+library(MultiVarSel)
+library(ggplot2)
+data("copals_camera")
+dim(copals_camera)
+```
+
+```{r}
+copals = copals_camera[copals_camera$Include == 1, -1]
+
+Y <- as.matrix(copals[, -(1:2)])
+X1 <- copals[, 1]
+X2 <- copals[, 2]
+
+rm <- which(X1 %in% c("1155", "1551"))
+Y <- Y[-rm,]
+X1 <- X1[-rm] ; X1 <- factor(as.character(X1))
+X2 <- X2[-rm] ; X2 <- factor(as.character(X2))
+```
+
+
+```{r}
+table(X1,X2)
+```
+```{r}
+X <- model.matrix(lm(Y ~ X2 + 0))
+p <- ncol(X)
+n = nrow(X)
+n
+```
+
+
+```{r}
+q = dim(Y)[2]
+q
+```
+
+```{r}
+Yscaled = scale(Y)
+Y = Yscaled
+```
+
+
+```{r}
+Y = Y[,1:200]
+residuals = lm(as.matrix(Y)~ X-1)$residuals
+pvalue = whitening_test(residuals)
+pvalue
+```
+```{r}
+result = whitening_choice(residuals, c("AR1", "nonparam", "ARMA"), pAR=1 , qMA=1)
+result
+```
+```{r}
+square_root_inv_hat_Sigma = whitening(residuals, "nonparam", pAR=1,qMA=0)
+Frequencies = variable_selection(Y,X, square_root_inv_hat_Sigma, nb_repli=100, parallel=FALSE)
+
+colnames(Frequencies) <- c('Names_of_Y', 'Names_of_X', 'frequency')
+# Here we can consider the names of Y as numerical since they correspond
+# to the ratio m/z of the metabolites. 
+Frequencies$Names_of_X<-sub('X2','',Frequencies$Names_of_X)
+Frequencies$Names_of_Y<-as.numeric(gsub('X','',gsub('\\.1$','',Frequencies$Names_of_Y)))
+```
+
+```{r}
+p<-ggplot(data=Frequencies[Frequencies$frequency>=0.95,],
+  aes(x=Names_of_Y,y=Names_of_X,color=frequency))+
+  geom_tile(size=0.75) +
+  scale_color_gradient2(midpoint=0.95,mid ='orange') +
+  theme_bw()+ylab('Levels of X')+
+  xlab('m/z')
+
+p
+```
+
+
+```{r}
+p<-ggplot(data=Frequencies[Frequencies$frequency==1,],
+  aes(x=Names_of_Y,y=Names_of_X,color=Names_of_X))+
+  geom_point(size=1)+theme_bw()+ylab('Levels of X')+xlab('m/z')
+p 
+```
 
 
 
