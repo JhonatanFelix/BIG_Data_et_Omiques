@@ -1,10 +1,20 @@
 ---
-title: "Analyse données métabolome pour UC"
-author: "Jhonatan Ramos Felix"
-date: ''
-output:
-  pdf_document: default
+title: "Analyse métabolome"
+output: html_notebook
 ---
+
+```{r}
+#install.packages("doParallel")
+#install.packages("parallel")
+#install.packages("foreach")
+#install.packages("iterators")
+library(foreach)
+library(iterators)
+library(parallel)
+library(doParallel)
+```
+
+
 
 ```{r}
 rm(list=ls())
@@ -47,7 +57,35 @@ summary(table2)
 ```
 
 # Matrices Y et X
-$$ X = \beta $$
+
+X: Matrix of a design of an one-way Anova model
+
+ $$X = \begin{pmatrix}
+ 1 & 0 & 0 \\
+ 1 & 0 & 0 \\
+ 1 & 0 & 0 \\
+ 0 & 1 & 0 \\
+ \vdots & 1 & 0 \\
+ \vdots & 1 & 0 \\
+ \vdots & \vdots & 1 \\
+ \vdots & \vdots & 1 \\
+ 0 & 0 & 1
+ \end{pmatrix}$$ 
+ $$ B = \begin{pmatrix}
+ B_{1,1} & \cdots & B_{1,q} \\
+ B_{2,1} & \cdots & B_{2,q} \\
+ B_{3,1} & \cdots & B_{3,q} \\
+ \end{pmatrix}  \quad \text{adicionar q = 197 }
+ $$
+ 
+ $$E= \begin{pmatrix} 
+ E_{1,1} & \cdots & E_{1,q} \\
+ \vdots & \ddots & \vdots \\
+ E_{n,1} & \cdots & E_{n,q} \\
+ \end{pmatrix} \quad \text{adicionar quer n = 9  e que q = 197}
+ $$ 
+ 
+ 
 
 ```{r}
 Y  <- as.matrix(table2[ , -1])
@@ -65,15 +103,43 @@ Y=scale(Y)
 ```
 
 ```{r}
+residus1 = lm(as.matrix(Y)~ X+0)$residuals
+```
+
+
+```{r}
 ## Definition of the residuals
 residus=lm(as.matrix(Y)~X-1)$residuals
+```
 
+# Whitening test
+
+Gn teste
+
+$$ H_0 : \text{"les colonnes de Ê sont indéoendantes"} $$ 
+
+$$ H_1 : \text{"les colonnes de Ê ne sont pas indépendantes"} $$;
+
+La fonction whitening-test fournuit une p-valeur. Si cette < 0.05 on rejette ($H_0$) au niveau 5%.
+Dans notre cas, p valeur = 0.85 > 0.05, donc on rejette $(H_0)$ au niveau 10% et donc il faut estimer la matrice 
+de covariance $\Sigma$ des lignes de E. 
+
+Rappel: On suppose les lignes sont iid $\mathcal{N}(o; \Sigma)$ , où $\Sigma$ est une matrice$, de convariance des 
+lignes de E.
+
+Pour chacun des modèles possibiles pour $\Sigma$ qui sont ici:
+
+  - AR(1)
+  - non paramétrique ($\Sigma$ est une matrice de Toeplitj symétrique)
+  - ARMA(1,1)
+
+```{r}
 ## Whitening test without using any whitening method
 pvalue=whitening_test(residus)
 print(pvalue)
 
 ## Testing the two dependence structures (parametric : AR1 and Nonparametric) : Toeplitz case
-whitening_choice(residus, typeDeps = c("AR1","nonparam"), pAR = 1, qMA = 0)
+whitening_choice(residus, typeDeps = c("AR1","nonparam", "ARMA"), pAR = 1, qMA = 0)
 
 ## => We will use the nonparametric modeling.
 
@@ -82,46 +148,48 @@ square_root_inv_hat_Sigma=whitening(residus,"nonparam",pAR=1,qMA=0)
 
 ```{r,echo=FALSE}
 #### Modélisation par une matrice de covariance par blocs
-# res_block=Sigma_estimation(residus, k = NULL, kmax = min(100, (q - 1)), nb_nn0 = NULL, seq.nb = NULL, step = 10, prop.max = 0.7, 
-# big = FALSE,reorder = TRUE,inv_12 = TRUE)
-# 
-# image(Matrix(res_block$Sigma_est[res_block$order,res_block$order]))
+#res_block=Sigma_estimation(residus, k = NULL, kmax = min(100, (q - 1)), nb_nn0 = NULL, seq.nb = NULL, step = 10, prop.max = 0.7,big = TRUE,reorder = TRUE,inv_12 = TRUE)
+ 
+res_block=Sigma_estimation(residus, k = NULL, nb_nn0 = NULL,big = TRUE,reorder = TRUE,inv_12 = TRUE)
+image(Matrix(res_block$Sigma_est[res_block$order,res_block$order]))
 
 ```
+
+
 
 ```{r,echo=FALSE}
 ########################################
 ##### Choix du blanchiment #############
 ########################################
 
-# cor_residus=cor(residus)
-# mat_residus=cor_residus[upper.tri(cor_residus)]
-# cor_res_blanch1=cor(residus%*%as.matrix(square_root_inv_hat_Sigma))
-# mat_res_blanch1=cor_res_blanch1[upper.tri(cor_res_blanch1)]
-# cor_res_blanch2=cor(residus%*%as.matrix(res_block$S_inv_12))
-# mat_res_blanch2=cor_res_blanch2[upper.tri(cor_res_blanch2)]
+cor_residus=cor(residus)
+mat_residus=cor_residus[upper.tri(cor_residus)]
+cor_res_blanch1=cor(residus%*%as.matrix(square_root_inv_hat_Sigma))
+mat_res_blanch1=cor_res_blanch1[upper.tri(cor_res_blanch1)]
+cor_res_blanch2=cor(residus%*%as.matrix(res_block$S_inv_12))
+mat_res_blanch2=cor_res_blanch2[upper.tri(cor_res_blanch2)]
 # 
-# res_blanch_data=data.frame(sans_blanch=mat_residus,
-# blanch_toeplitz=mat_res_blanch1,blanch_bloc=mat_res_blanch2)
+res_blanch_data=data.frame(sans_blanch=mat_residus,
+blanch_toeplitz=mat_res_blanch1,blanch_bloc=mat_res_blanch2)
 # 
-# bx=ggplot(melt(res_blanch_data),aes(x=variable,y=value))+theme_bw()+
-#   xlab('Methodes blanchiment')
-# #bx+stat_summary(fun.data='mean_se')
-# bx+geom_boxplot()+geom_hline(yintercept=0,color='red')
+bx=ggplot(melt(res_blanch_data),aes(x=variable,y=value))+theme_bw()+
+   xlab('Methodes blanchiment')
+   bx+stat_summary(fun.data='mean_se')
+   bx+geom_boxplot()+geom_hline(yintercept=0,color='red')
 
 ### Autre façon de faire un boxplot
-#boxplot(res_blanch_data)
-#abline(h=0,col='red')
+boxplot(res_blanch_data)
+abline(h=0,col='red')
 
 ```
 
 ```{r}
 #### Sélection de variables
 
-require(doMC) #### ne fonctionne pas sous windows
-registerDoMC(cores=2)
-#Freqs=variable_selection(Y,X,square_root_inv_hat_Sigma,nb_repli=5000,parallel=TRUE,nb.cores=2)
-# save(Freqs, file='Freqs_metabolome_Ath_TOEPLITZ_nbreplis_5000.Rdata')
+
+
+Freqs = variable_selection(Y, X, square_root_inv_hat_Sigma, nb_repli=5000, parallel=TRUE, nb.cores=1)
+save(Freqs, file='Freqs_metabolome_Ath_TOEPLITZ_nbreplis_5000.Rdata')
 
 load('Freqs_metabolome_Ath_TOEPLITZ_nbreplis_5000.Rdata')
 
@@ -137,6 +205,7 @@ plot(sort(Freqs$frequency,decreasing = T),type='s')
 sort(Freqs$frequency,decreasing = T)[1:50]
 
 ```
+
 
 ```{r}
 seuil=0.93
@@ -192,13 +261,14 @@ bp+facet_wrap(~variable,ncol=3)+ylab("Réponse")+theme(strip.text = element_text
 
 ```{r,fig.width=10,fig.height=10,echo=FALSE}
 liste_metabolites_selected=unique(Freqs[indices,]$Names_of_Y)
-#length(liste_metabolites_selected)
+length(liste_metabolites_selected)
 
-#residus_red=residus[,colnames(residus)%in%liste_metabolites_selected]
+residus_red=residus[,colnames(residus)%in%liste_metabolites_selected]
 
-#hc=hclust(dist(t(residus_red)),'ward')
+hc=hclust(dist(t(residus_red)),'ward')
 
-# hc=hclust(dist(1 - abs(cor(residus_red))))
-# plot(hc)
-# rect.hclust(hc,k=5)
+hc=hclust(dist(1 - abs(cor(residus_red))))
+
+plot(hc)
+#rect.hclust(hc,k=5)
 ```
