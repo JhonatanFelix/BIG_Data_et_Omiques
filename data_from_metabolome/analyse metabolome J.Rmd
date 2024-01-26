@@ -3,17 +3,6 @@ title: "Analyse métabolome"
 output: html_notebook
 ---
 
-```{r}
-#install.packages("doParallel")
-#install.packages("parallel")
-#install.packages("foreach")
-#install.packages("iterators")
-library(foreach)
-library(iterators)
-library(parallel)
-library(doParallel)
-```
-
 
 
 ```{r}
