@@ -1,0 +1,251 @@
+---
+title: "Analyse proteome"
+output: html_notebook
+---
+
+
+```{r}
+rm(list=ls())
+
+library(MultiVarSel)
+library(BlockCov)
+library(reshape)   ### pour utiliser la fonction melt pour les boxplots
+
+
+library("knitr") # pour avoir un format table dans les sorties
+library("ggplot2") # pour avoir de "beaux"" graphiques
+library("FactoMineR") # pour effectuer l'ACP
+library("factoextra") # pour extraire et visualiser les résultats issus de FactoMineR
+library("corrplot") # pour avoir une représentation des corrélations
+```
+
+```{r}
+setwd("C:/Users/jhony/OneDrive/Imagens/2023-2024 Paris/AgroParisTech/premier année/UC à choix/BIG_Data_et_Omiques/data_from_proteome")
+
+```
+
+# Reading the Data
+
+```{r}
+table1=read.table("proteome_Ath.csv", sep=";", header=T)  
+
+
+table=table1[,-1]
+
+table
+
+#### Making a new supplementary quantitative variable to associate the name of the experiments
+temperature<-rep(c("FROID", "STD", "CHAUD"), each=3)
+table2<-data.frame(temperature,table) # new table
+
+
+  which(colMeans(table2[ ,2:dim(table2)[2]])==0) # We ask the indices of the columns that are
+                                                 # 0, to see if there is a column centered.
+  
+  which(apply(table2[,2:dim(table2)[2]],2,sd)==0) #Asking if there is a column that's constant
+  
+  which(is.na(table2)) #Seeing if there's any missing value
+  
+  
+summary(table2)
+
+```
+```{r}
+ 
+# Load necessary libraries
+library(ggplot2)
+library(reshape2)
+
+# Read the data
+
+# It's important to ensure that your data is in the correct format.
+# The rows should be the different experiments (e.g., cold, medium, hot)
+# and the columns should be your variables (AT1GO...).
+
+# Reshape the data from wide to long format
+long_data <- melt(table2, id.vars = "temperature")
+
+# Creating the heatmap
+# You can adjust the scale and colors as needed
+ggplot(long_data, aes(x = variable, y = temperature, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# Replace "YourIDVariable" with the appropriate identifier from your dataset
+# Also, replace "/path/to/your/proteome_Ath.csv" with the actual path to your file
+
+```
+
+
+
+```{r}
+# Carregar a biblioteca
+library(FactoMineR)
+
+resPCA = PCA(table2[ , 2:dim(table2)[2]], scale.unit = TRUE, ncp = 10, quanti.sup = 11:12, graph=F)
+get_eigenvalue(resPCA)
+
+
+fviz_eig(resPCA, addlabels = TRUE, ylim = c(0,50))
+
+var=get_pca_var(resPCA)
+fviz_pca_var(resPCA, geom = c("text","arrow"), col.var = "cos2", axes=1:2) + theme_classic()
+
+
+
+# Realizar PCA
+pca_result <- PCA(table2[, 2: dim(table2)[2]], scale.unit = TRUE, ncp = 5, graph = TRUE)
+
+print(pca_result)
+
+
+```
+```{r}
+ind=get_pca_ind(resPCA)
+cos2 = rowSums(resPCA$ind$cos2[, 1:2])
+fviz_pca_ind (resPCA, col.ind = "cos2",axes=1:2,
+              gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+            repel = TRUE # pour éviter le chevauchement de texte
+)
+
+```
+
+
+
+
+
+
+
+```{r}
+Y  <- as.matrix(table2[ , -1])
+
+X <- model.matrix(lm(Y ~ temperature + 0, data=table2))
+p <- ncol(X)
+n=nrow(X)
+print(n)
+q=dim(Y)[2]
+print(q)
+
+## Scaling the Y matrix (to force the empirical mean of each column
+## to be 0 and the variance of each column to be 1)
+Y=scale(Y)
+```
+
+```{r}
+residus1 = lm(as.matrix(Y)~ X+0)$residuals
+```
+
+
+```{r}
+## Definition of the residuals
+residus=lm(as.matrix(Y)~X-1)$residuals
+```
+
+
+
+```{r}
+## Whitening test without using any whitening method
+pvalue=whitening_test(residus)
+print(pvalue)
+
+## Testing the two dependence structures (parametric : AR1 and Nonparametric) : Toeplitz case
+whitening_choice(residus, typeDeps = c("AR1","nonparam", "ARMA"), pAR = 1, qMA = 0)
+
+## => We will use the nonparametric modeling.
+
+square_root_inv_hat_Sigma=whitening(residus,"nonparam",pAR=1,qMA=0)
+```
+
+```{r,echo=FALSE}
+#### Modélisation par une matrice de covariance par blocs
+#res_block=Sigma_estimation(residus, k = NULL, kmax = min(100, (q - 1)), nb_nn0 = NULL, seq.nb = NULL, step = 10, prop.max = 0.7,big = TRUE,reorder = TRUE,inv_12 = TRUE)
+ 
+res_block = Sigma_estimation(residus, k = NULL, nb_nn0 = NULL,big = TRUE,reorder = TRUE,inv_12 = TRUE)
+image(x = Matrix(res_block$Sigma_est[res_block$order,res_block$order]), axes = FALSE, ann = FALSE)
+
+```
+
+
+
+
+```{r,echo=FALSE}
+########################################
+##### Choix du blanchiment #############
+########################################
+
+cor_residus=cor(residus)
+mat_residus=cor_residus[upper.tri(cor_residus)]
+cor_res_blanch1=cor(residus%*%as.matrix(square_root_inv_hat_Sigma))
+mat_res_blanch1=cor_res_blanch1[upper.tri(cor_res_blanch1)]
+cor_res_blanch2=cor(residus%*%as.matrix(res_block$S_inv_12))
+mat_res_blanch2=cor_res_blanch2[upper.tri(cor_res_blanch2)]
+# 
+res_blanch_data=data.frame(sans_blanch=mat_residus,
+blanch_toeplitz=mat_res_blanch1,blanch_bloc=mat_res_blanch2)
+# 
+bx=ggplot(melt(res_blanch_data),aes(x=variable,y=value))+theme_bw()+
+   xlab('Methodes blanchiment')
+   bx+stat_summary(fun.data='mean_se')
+   bx+geom_boxplot()+geom_hline(yintercept=0,color='red')
+
+### Autre façon de faire un boxplot
+boxplot(res_blanch_data)
+abline(h=0,col='red')
+
+```
+
+```{r}
+#### Sélection de variables
+
+
+
+Freqs = variable_selection(Y, X, square_root_inv_hat_Sigma, nb_repli=5000, parallel=TRUE, nb.cores=1)
+save(Freqs, file='Freqs_proteome_Ath_TOEPLITZ_nbreplis_5000.Rdata')
+
+load('Freqs_proteome_Ath_TOEPLITZ_nbreplis_5000.Rdata')
+
+#Freqs=variable_selection(Y,X,res_block$S_inv_12,nb_repli=5000,parallel=TRUE,nb.cores=4)
+#save(Freqs, file='Freqs_metabolome_Ath_BLOC_nbreplis_5000.Rdata')
+
+#load('Freqs_metabolome_Ath_BLOC_nbreplis_5000.Rdata')
+
+colnames(Freqs)<-c('Names_of_Y','Names_of_X','frequency')
+
+plot(sort(Freqs$frequency,decreasing = T),type='s')
+
+sort(Freqs$frequency,decreasing = T)[1:50]
+
+```
+
+
+```{r}
+seuil=0.90
+
+Freqs$Names_of_X=gsub(pattern='temperature',replacement='',Freqs$Names_of_X)
+
+indices=which(Freqs$frequency>=seuil)
+
+Yvec=as.numeric(Y%*%square_root_inv_hat_Sigma)
+Xvec=kronecker(t(square_root_inv_hat_Sigma),X)
+Xvec_sel=Xvec[,indices]
+B_sel_hat=solve(t(Xvec_sel)%*%Xvec_sel,t(Xvec_sel)%*%Yvec)
+Freqs$estim=rep(0,p*q)
+Freqs$estim[indices]=as.vector(B_sel_hat)
+
+library(ggplot2)
+gr<-ggplot(data=Freqs[Freqs$frequency>=seuil,],
+           aes(x=Names_of_Y,y=Names_of_X,color=estim))+
+  scale_color_gradient2(low="steelblue",mid = "white", high ="red")+
+  geom_point(size=2)+theme_bw()+
+  ylab('Température')+
+  xlab('Métabolites')+theme(axis.text.x = element_text(angle=90))
+gr
+
+```
+
+
+
+
+
