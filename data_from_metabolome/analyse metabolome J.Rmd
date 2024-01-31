@@ -221,6 +221,11 @@ gr
 
 ```
 
+```{r}
+square_root_inv_hat_Sigma
+```
+
+
 ```{r,fig.width=18,fig.height=20}
 
 #### Boxplots

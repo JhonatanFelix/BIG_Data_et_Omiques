@@ -50,33 +50,7 @@ table2<-data.frame(temperature,table) # new table
 summary(table2)
 
 ```
-```{r}
- 
-# Load necessary libraries
-library(ggplot2)
-library(reshape2)
 
-# Read the data
-
-# It's important to ensure that your data is in the correct format.
-# The rows should be the different experiments (e.g., cold, medium, hot)
-# and the columns should be your variables (AT1GO...).
-
-# Reshape the data from wide to long format
-long_data <- melt(table2, id.vars = "temperature")
-
-# Creating the heatmap
-# You can adjust the scale and colors as needed
-ggplot(long_data, aes(x = variable, y = temperature, fill = value)) +
-  geom_tile() +
-  scale_fill_gradient(low = "blue", high = "red") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1))
-
-# Replace "YourIDVariable" with the appropriate identifier from your dataset
-# Also, replace "/path/to/your/proteome_Ath.csv" with the actual path to your file
-
-```
 
 
 
@@ -102,6 +76,10 @@ print(pca_result)
 
 
 ```
+
+
+
+
 ```{r}
 ind=get_pca_ind(resPCA)
 cos2 = rowSums(resPCA$ind$cos2[, 1:2])
@@ -220,8 +198,10 @@ sort(Freqs$frequency,decreasing = T)[1:50]
 ```
 
 
+
+
 ```{r}
-seuil=0.90
+seuil=0.93
 
 Freqs$Names_of_X=gsub(pattern='temperature',replacement='',Freqs$Names_of_X)
 
@@ -245,6 +225,123 @@ gr
 
 ```
 
+
+```{r}
+
+lista = Freqs[Freqs$frequency>=seuil,]['Names_of_Y']
+
+column_names <- lista$Names_of_Y
+
+column_names
+
+selected_columns <- table2[, column_names]
+selected_columns1 <- data.frame(temperature, selected_columns)
+```
+
+```{r}
+resPCA1 = PCA(selected_columns, scale.unit = TRUE, ncp = 10, quanti.sup = 11:12, graph= F)
+get_eigenvalue(resPCA1)
+
+fviz_eig(resPCA1, addlabels = TRUE, ylim = c(0,50))
+
+var=get_pca_var(resPCA1)
+fviz_pca_var(resPCA1, geom = c("text","arrow"), col.var = "cos2", axes=1:2) + theme_classic()
+
+
+
+# Realizar PCA
+pca_result <- PCA(selected_columns, scale.unit = TRUE, ncp = 5, graph = TRUE)
+
+print(pca_result)
+
+ind=get_pca_ind(resPCA1)
+cos2 = rowSums(resPCA$ind$cos2[, 1:2])
+fviz_pca_ind (resPCA1, col.ind = "cos2",axes=1:2,
+              gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+            repel = TRUE # pour éviter le chevauchement de texte
+)
+
+```
+
+
+```{r}
+ 
+# Load necessary libraries
+library(ggplot2)
+library(reshape2)
+
+# Read the data
+
+# It's important to ensure that your data is in the correct format.
+# The rows should be the different experiments (e.g., cold, medium, hot)
+# and the columns should be your variables (AT1GO...).
+
+# Reshape the data from wide to long format
+long_data <- melt(selected_columns1, id.vars = "temperature")
+
+# Creating the heatmap
+# You can adjust the scale and colors as needed
+ggplot(long_data, aes(x = variable, y = temperature, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+```
+```{r,fig.width=18,fig.height=20}
+library(corrplot)
+correlation=cor(selected_columns)
+kable(correlation,digits=2)
+
+corrplot(correlation, method = "color", 
+         type = "full", order = "hclust", 
+         tl.cex = 0.6, number.cex = 0.7)
+```
+
+
+
+```{r,fig.width=18,fig.height=20}
+
+#### Boxplots
+
+table_red=as.data.frame(Y[,colnames(Y)%in%unique(Freqs[indices,]$Names_of_Y)])
+table_red$temperature=table2[,1]
+
+bp <- ggplot(melt(table_red), aes(x=temperature, y=value,fill=temperature)) + 
+  geom_boxplot()+theme_bw()+theme(axis.text.y =element_text(size=20),axis.text.x =element_text(size=15),axis.title =element_text(size=20),legend.title=element_text(size=20), 
+    legend.text=element_text(size=19))
+bp+facet_wrap(~variable,ncol=3)+ylab("Réponse")+theme(strip.text = element_text(face="bold", size=20))
+
+
+#### Sans la fonction melt
+# matrice=table_red[,1:length(unique(Freqs[indices,]$Names_of_Y))]
+# table_boxplot=data.frame(Reponse=c(t(unlist(t(matrice)))),
+#    temperature=rep(table_red$temperature,length(unique(Freqs[indices,]$Names_of_Y))),
+#    nom=rep(unique(Freqs[indices,]$Names_of_Y),each=length(table_red$temperature)))
+# 
+# bp <- ggplot(table_boxplot, aes(x=temperature, y=Reponse)) + 
+#   geom_boxplot()+theme_bw()
+# bp+facet_wrap(~nom,ncol=3)
+
+### Autre façon de faire un boxplot
+# boxplot(Y[,which(colnames(Y)=="Maleate")]~temperature,main="Metabolite Maleate")
+```
+
+```{r,fig.width=10,fig.height=10,echo=FALSE}
+liste_metabolites_selected=unique(Freqs[indices,]$Names_of_Y)
+length(liste_metabolites_selected)
+
+residus_red=residus[,colnames(residus)%in%liste_metabolites_selected]
+
+hc=hclust(dist(t(residus_red)),'ward')
+
+hc=hclust(dist(1 - abs(cor(residus_red))))
+
+plot(hc)
+rect.hclust(hc,k=5)
+```
+```
 
 
 
